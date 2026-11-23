@@ -246,11 +246,25 @@
       gap: 8px;
     }
 
+    .item-name-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
     .item-name {
       font-size: 1.02rem;
       font-weight: 700;
       color: var(--text-main);
       word-break: break-word;
+    }
+
+    .item-right {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
     }
 
     .item-total {
@@ -262,6 +276,20 @@
 
     .items-grid.compact .item-total {
       font-size: 1.1rem;
+    }
+
+    .delete-item-btn {
+      padding: 5px 8px;
+      font-size: 0.78rem;
+      line-height: 1;
+      border-radius: 8px;
+      background: rgba(224, 72, 72, 0.14);
+      color: #ff8585;
+      border: 1px solid rgba(224, 72, 72, 0.3);
+    }
+
+    .delete-item-btn:hover {
+      background: rgba(224, 72, 72, 0.28);
     }
 
     .char-breakdown {
@@ -454,9 +482,7 @@
       getFirestore,
       doc,
       onSnapshot,
-      setDoc,
-      updateDoc,
-      arrayUnion
+      setDoc
     } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
     const firebaseConfig = {
@@ -489,375 +515,4 @@
     const historyList = document.getElementById("historyList");
     const stickyCharSelect = document.getElementById("stickyCharSelect");
     const undoBtn = document.getElementById("undoBtn");
-    const toastEl = document.getElementById("toast");
-
-    function sanitizeRoom(name) {
-      const cleaned = (name || "")
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9_-]/g, "-")
-        .replace(/-+/g, "-")
-        .replace(/^-|-$/g, "");
-      return cleaned || "ko-genel-slot";
-    }
-
-    const urlParams = new URLSearchParams(window.location.search);
-    let currentRoom = sanitizeRoom(urlParams.get("room") || localStorage.getItem("ko_last_room") || "ko-genel-slot");
-    let activeChar = localStorage.getItem("ko_active_char") || "";
-    let isCompactView = localStorage.getItem("ko_compact_view") === "1";
-    let unsubscribeRoom = null;
-
-    let roomState = {
-      characters: ["Oyuncu 1", "Oyuncu 2"],
-      items: ["Raptor", "Shard", "Bus"],
-      // counts[itemName][charName] = number
-      counts: {},
-      history: []
-    };
-
-    function showToast(msg) {
-      toastEl.textContent = msg;
-      toastEl.classList.add("show");
-      clearTimeout(showToast._timer);
-      showToast._timer = setTimeout(() => toastEl.classList.remove("show"), 2000);
-    }
-
-    function setStatus(type, label) {
-      statusPill.className = "status-pill " + type;
-      statusText.textContent = label;
-    }
-
-    function updateUrlRoom(room) {
-      const url = new URL(window.location.href);
-      url.searchParams.set("room", room);
-      window.history.replaceState({}, "", url.toString());
-      localStorage.setItem("ko_last_room", room);
-    }
-
-    function ensureActiveChar() {
-      if (!roomState.characters.length) {
-        activeChar = "";
-        return;
-      }
-      if (!activeChar || !roomState.characters.includes(activeChar)) {
-        activeChar = roomState.characters[0];
-      }
-      localStorage.setItem("ko_active_char", activeChar);
-    }
-
-    function getItemTotal(itemName) {
-      const byChar = roomState.counts?.[itemName] || {};
-      return Object.values(byChar).reduce((acc, n) => acc + (Number(n) || 0), 0);
-    }
-
-    function renderAll() {
-      roomInput.value = currentRoom;
-      ensureActiveChar();
-      itemsGrid.classList.toggle("compact", isCompactView);
-      toggleViewBtn.textContent = isCompactView ? "Görünüm: Liste" : "Görünüm: Kart";
-
-      // Karakter chipleri
-      charChips.innerHTML = "";
-      stickyCharSelect.innerHTML = "";
-
-      if (!roomState.characters.length) {
-        charChips.innerHTML = '<span style="color:var(--text-muted);font-size:0.85rem;">Henüz karakter eklenmedi.</span>';
-        const opt = document.createElement("option");
-        opt.value = "";
-        opt.textContent = "Karakter ekleyin";
-        stickyCharSelect.appendChild(opt);
-      } else {
-        roomState.characters.forEach((name) => {
-          const chip = document.createElement("button");
-          chip.type = "button";
-          chip.className = "char-chip" + (name === activeChar ? " active" : "");
-          chip.innerHTML = `
-            <span>${escapeHtml(name)}</span>
-            <span class="remove-x" title="Sil">✕</span>
-          `;
-          chip.addEventListener("click", (e) => {
-            if (e.target.classList.contains("remove-x")) {
-              e.stopPropagation();
-              removeCharacter(name);
-            } else {
-              activeChar = name;
-              localStorage.setItem("ko_active_char", activeChar);
-              renderAll();
-            }
-          });
-          charChips.appendChild(chip);
-
-          const opt = document.createElement("option");
-          opt.value = name;
-          opt.textContent = "Aktif: " + name;
-          if (name === activeChar) opt.selected = true;
-          stickyCharSelect.appendChild(opt);
-        });
-      }
-
-      // Item kartları
-      itemsGrid.innerHTML = "";
-      if (!roomState.items.length) {
-        itemsGrid.innerHTML = '<div class="empty-state">Takip edilecek item ekleyin (örn: Raptor, Shard, Bus).</div>';
-      } else {
-        roomState.items.forEach((itemName) => {
-          const total = getItemTotal(itemName);
-          const byChar = roomState.counts?.[itemName] || {};
-
-          const card = document.createElement("div");
-          card.className = "item-card";
-
-          const breakdownHtml = Object.entries(byChar)
-            .filter(([, count]) => Number(count) > 0)
-            .map(([cName, count]) => `<span class="breakdown-tag">${escapeHtml(cName)}: <b>${count}</b></span>`)
-            .join("");
-
-          card.innerHTML = `
-            <div>
-              <div class="item-top">
-                <div class="item-name">${escapeHtml(itemName)}</div>
-                <div class="item-total">${total}</div>
-              </div>
-              ${!isCompactView ? `<div class="char-breakdown" style="margin-top:8px;">${breakdownHtml || '<span style="opacity:0.65;">Henüz drop yok</span>'}</div>` : ""}
-            </div>
-            <button type="button" class="drop-btn" data-item="${escapeAttr(itemName)}">
-              +1 DROP ${activeChar ? `(${escapeHtml(activeChar)})` : ""}
-            </button>
-          `;
-
-          card.querySelector(".drop-btn").addEventListener("click", () => addDrop(itemName));
-          itemsGrid.appendChild(card);
-        });
-      }
-
-      // Geçmiş
-      historyList.innerHTML = "";
-      const recent = [...(roomState.history || [])].reverse().slice(0, 30);
-      if (!recent.length) {
-        historyList.innerHTML = '<div class="empty-state" style="padding:14px;">Henüz drop kaydı yok.</div>';
-      } else {
-        recent.forEach((entry) => {
-          const div = document.createElement("div");
-          div.className = "history-item";
-          div.innerHTML = `
-            <div>
-              <b style="color:var(--accent-gold);">${escapeHtml(entry.charName || "Bilinmeyen")}</b>
-              <span>→</span>
-              <b>${escapeHtml(entry.itemName)}</b> (+1)
-            </div>
-            <div class="history-time">${escapeHtml(entry.timeStr || "")}</div>
-          `;
-          historyList.appendChild(div);
-        });
-      }
-    }
-
-    function escapeHtml(str) {
-      return String(str)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;");
-    }
-
-    function escapeAttr(str) {
-      return String(str).replace(/"/g, "&quot;");
-    }
-
-    async function saveRoomState() {
-      try {
-        setStatus("syncing", "Kaydediliyor...");
-        const ref = doc(db, "drop_rooms", currentRoom);
-        await setDoc(ref, {
-          characters: roomState.characters,
-          items: roomState.items,
-          counts: roomState.counts,
-          history: (roomState.history || []).slice(-100),
-          updatedAt: Date.now()
-        }, { merge: true });
-        setStatus("", "Canlı Bağlı (" + currentRoom + ")");
-      } catch (err) {
-        console.error(err);
-        setStatus("error", "Kayıt Hatası");
-        showToast("Veritabanına yazılamadı, Firestore kurallarını kontrol et.");
-      }
-    }
-
-    function subscribeToRoom(room) {
-      if (unsubscribeRoom) unsubscribeRoom();
-      currentRoom = sanitizeRoom(room);
-      updateUrlRoom(currentRoom);
-      setStatus("syncing", "Senkronize ediliyor...");
-
-      const ref = doc(db, "drop_rooms", currentRoom);
-      unsubscribeRoom = onSnapshot(ref, async (snap) => {
-        if (!snap.exists()) {
-          roomState = {
-            characters: ["Oyuncu 1", "Oyuncu 2"],
-            items: ["Raptor", "Shard", "Bus"],
-            counts: {},
-            history: []
-          };
-          await saveRoomState();
-        } else {
-          const data = snap.data();
-          roomState = {
-            characters: Array.isArray(data.characters) ? data.characters : [],
-            items: Array.isArray(data.items) ? data.items : [],
-            counts: data.counts && typeof data.counts === "object" ? data.counts : {},
-            history: Array.isArray(data.history) ? data.history : []
-          };
-        }
-        setStatus("", "Canlı Bağlı (" + currentRoom + ")");
-        renderAll();
-      }, (err) => {
-        console.error(err);
-        setStatus("error", "Bağlantı Hatası");
-      });
-    }
-
-    async function addCharacter() {
-      const name = charInput.value.trim();
-      if (!name) return;
-      if (!roomState.characters.includes(name)) {
-        roomState.characters.push(name);
-        activeChar = name;
-        localStorage.setItem("ko_active_char", activeChar);
-        charInput.value = "";
-        renderAll();
-        await saveRoomState();
-      } else {
-        activeChar = name;
-        charInput.value = "";
-        renderAll();
-      }
-    }
-
-    async function removeCharacter(name) {
-      roomState.characters = roomState.characters.filter((c) => c !== name);
-      ensureActiveChar();
-      renderAll();
-      await saveRoomState();
-    }
-
-    async function addItem() {
-      const name = itemInput.value.trim();
-      if (!name) return;
-      if (!roomState.items.includes(name)) {
-        roomState.items.push(name);
-        if (!roomState.counts[name]) roomState.counts[name] = {};
-        itemInput.value = "";
-        renderAll();
-        await saveRoomState();
-      } else {
-        showToast("Bu item zaten listede.");
-      }
-    }
-
-    async function addDrop(itemName) {
-      if (!activeChar) {
-        showToast("Önce bir karakter seç veya ekle.");
-        return;
-      }
-      if (!roomState.counts[itemName]) roomState.counts[itemName] = {};
-      roomState.counts[itemName][activeChar] = (Number(roomState.counts[itemName][activeChar]) || 0) + 1;
-
-      const now = new Date();
-      const timeStr = now.toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      roomState.history.push({
-        id: Date.now() + "_" + Math.random().toString(36).slice(2, 6),
-        itemName,
-        charName: activeChar,
-        timeStr
-      });
-
-      if (navigator.vibrate) {
-        navigator.vibrate(30);
-      }
-
-      renderAll();
-      await saveRoomState();
-      showToast(`+1 ${itemName} → ${activeChar}`);
-    }
-
-    async function undoLastDrop() {
-      if (!roomState.history.length) {
-        showToast("Geri alınacak kayıt yok.");
-        return;
-      }
-      const last = roomState.history.pop();
-      const cur = Number(roomState.counts?.[last.itemName]?.[last.charName]) || 0;
-      if (cur > 0) {
-        roomState.counts[last.itemName][last.charName] = cur - 1;
-      }
-      renderAll();
-      await saveRoomState();
-      showToast(`Geri alındı: ${last.itemName} (${last.charName})`);
-    }
-
-    async function resetCounts() {
-      if (!confirm("Tüm drop sayıları ve geçmiş sıfırlansın mı?")) return;
-      roomState.counts = {};
-      roomState.history = [];
-      renderAll();
-      await saveRoomState();
-      showToast("Sayılar sıfırlandı.");
-    }
-
-    function copySummary() {
-      const lines = [`⚔️ KO Drop Özeti (Oda: ${currentRoom})`];
-      roomState.items.forEach((itemName) => {
-        const total = getItemTotal(itemName);
-        const byChar = roomState.counts?.[itemName] || {};
-        const detail = Object.entries(byChar)
-          .filter(([, n]) => Number(n) > 0)
-          .map(([c, n]) => `${c}: ${n}`)
-          .join(", ");
-        lines.push(`• ${itemName}: ${total}${detail ? ` (${detail})` : ""}`);
-      });
-      navigator.clipboard?.writeText(lines.join("\n"));
-      showToast("Özet panoya kopyalandı!");
-    }
-
-    joinRoomBtn.addEventListener("click", () => subscribeToRoom(roomInput.value));
-    roomInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") subscribeToRoom(roomInput.value);
-    });
-
-    copyLinkBtn.addEventListener("click", () => {
-      const url = new URL(window.location.href);
-      url.searchParams.set("room", currentRoom);
-      navigator.clipboard?.writeText(url.toString());
-      showToast("WhatsApp linki kopyalandı!");
-    });
-
-    toggleViewBtn.addEventListener("click", () => {
-      isCompactView = !isCompactView;
-      localStorage.setItem("ko_compact_view", isCompactView ? "1" : "0");
-      renderAll();
-    });
-
-    addCharBtn.addEventListener("click", addCharacter);
-    charInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") addCharacter();
-    });
-
-    addItemBtn.addEventListener("click", addItem);
-    itemInput.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") addItem();
-    });
-
-    stickyCharSelect.addEventListener("change", (e) => {
-      activeChar = e.target.value;
-      localStorage.setItem("ko_active_char", activeChar);
-      renderAll();
-    });
-
-    undoBtn.addEventListener("click", undoLastDrop);
-    resetCountsBtn.addEventListener("click", resetCounts);
-    copySummaryBtn.addEventListener("click", copySummary);
-
-    subscribeToRoom(currentRoom);
-  </script>
-</body>
-</html>
+    const toastEl = document.getElementById
