@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="tr" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Canlı Oyun İçi Drop Takip Sayacı</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+    .pulse-dot {
+      box-shadow: 0 0 8px rgba(34, 197, 94, 0.6);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col selection:bg-indigo-500 selection:text-white">
+
+  <!-- Modern Room Connection Lobby Overlay -->
+  <div id="lobbyOverlay" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-xl transition-opacity duration-300">
+    <div class="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-7 shadow-2xl shadow-indigo-950/40 overflow-hidden">
+      <div class="absolute -top-24 -right-24 w-48 h-48 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
+      <div class="absolute -bottom-24 -left-24 w-48 h-48 bg-emerald-600/15 rounded-full blur-3xl pointer-events-none"></div>
+
+      <div class="relative text-center space-y-2 mb-5">
+        <div class="w-14 h-14 mx-auto bg-gradient-to-tr from-indigo-600 to-violet-500 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/30 mb-3">
+          <i class="fa-solid fa-gem text-2xl text-white"></i>
+        </div>
+        <h2 class="text-2xl font-extrabold tracking-tight text-white">Drop Takip Lobisi</h2>
+        <p class="text-xs text-slate-400 max-w-xs mx-auto leading-relaxed">
+          Bir oda adı gir ve hemen başla. Farklı cihazlarla paylaşmak için bulut veritabanı (Firebase) bağlayabilirsin.
+        </p>
+      </div>
+
+      <!-- Connection Mode Status inside Lobby -->
+      <div id="lobbyAuthStatus" class="mb-5 flex items-center justify-between gap-2 text-xs py-2.5 px-3.5 rounded-xl bg-slate-950/90 border border-slate-800">
+        <div class="flex items-center gap-2 text-amber-400">
+          <i class="fa-solid fa-circle-notch fa-spin"></i>
+          <span>Bağlantı kontrol ediliyor...</span>
+        </div>
+        <button type="button" onclick="openCloudSettingsModal()" class="text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 underline">
+          Bulut Ayarı
+        </button>
+      </div>
+
+      <div class="space-y-4 relative">
+        <div>
+          <label class="block text-xs font-semibold text-slate-300 mb-1.5 ml-1">Oda Kodu / Parti Adı</label>
+          <div class="relative flex items-center">
+            <i class="fa-solid fa-hashtag absolute left-3.5 text-slate-500 text-sm"></i>
+            <input type="text" id="lobbyRoomInput" value="ortak-parti" placeholder="örn: gece-farmi-1"
+              class="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-2xl pl-9 pr-24 py-3 text-sm font-bold text-white outline-none transition">
+            <button type="button" onclick="generateRandomRoom()" title="Rastgele Oda Oluştur"
+              class="absolute right-2 bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1.5 rounded-xl text-[11px] font-medium transition flex items-center gap-1">
+              <i class="fa-solid fa-dice text-indigo-400"></i> Yeni
+            </button>
+          </div>
+        </div>
+
+        <div id="recentRoomsContainer" class="hidden space-y-1.5">
+          <span class="text-[11px] text-slate-500 ml-1">Son Kullanılan Odalar:</span>
+          <div id="recentRoomsList" class="flex flex-wrap gap-1.5"></div>
+        </div>
+
+        <button id="joinLobbyBtn" onclick="enterRoomFromLobby()"
+          class="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-bold text-sm rounded-2xl shadow-lg shadow-indigo-600/25 transition transform active:scale-[0.99] flex items-center justify-center gap-2">
+          <span>Odaya Bağlan</span>
+          <i class="fa-solid fa-arrow-right"></i>
+        </button>
+      </div>
+
+      <div class="mt-6 pt-4 border-t border-slate-800/80 flex items-center justify-between text-[11px] text-slate-500">
+        <span class="flex items-center gap-1.5"><i class="fa-solid fa-shield-halved text-emerald-500"></i> Kayıt Gerektirmez</span>
+        <button type="button" onclick="openCloudSettingsModal()" class="flex items-center gap-1.5 text-slate-400 hover:text-indigo-300 transition">
+          <i class="fa-solid fa-cloud-arrow-up text-indigo-400"></i> Firebase Bağla
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Header -->
+  <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-30 shadow-md">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+      
+      <div class="flex items-center space-x-3">
+        <div class="p-2.5 bg-gradient-to-tr from-indigo-600 to-violet-500 rounded-xl shadow-lg shadow-indigo-500/20 text-white">
+          <i class="fa-solid fa-gem text-xl"></i>
+        </div>
+        <div>
+          <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2 flex-wrap">
+            Canlı Drop Takip Sayacı
+            <span id="syncBadge" class="text-xs font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2.5 py-0.5 rounded-full flex items-center gap-1.5">
+              <span class="w-2 h-2 rounded-full bg-amber-400"></span>
+              <span id="syncStatusText">Yerel Mod</span>
+            </span>
+          </h1>
+          <p class="text-xs text-slate-400">Parti içi anlık ortak drop ve ganimet takip paneli</p>
+        </div>
+      </div>
+
+      <div class="flex items-center flex-wrap gap-2">
+        <div class="flex items-center bg-slate-950 border border-slate-700/80 rounded-xl p-1 gap-1">
+          <button onclick="openLobbyModal()" title="Oda Değiştir" class="flex items-center gap-1.5 px-2.5 py-1 hover:bg-slate-800 rounded-lg text-xs text-slate-200 font-semibold transition">
+            <i class="fa-solid fa-door-open text-indigo-400"></i>
+            <span id="headerRoomName">ortak-parti</span>
+            <i class="fa-solid fa-chevron-down text-[10px] text-slate-500 ml-0.5"></i>
+          </button>
+          <div class="h-4 w-[1px] bg-slate-800"></div>
+          <button onclick="copyRoomLink()" title="Oda Davet Linkini Kopyala" class="px-2.5 py-1 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded-lg text-xs font-medium transition flex items-center gap-1.5">
+            <i class="fa-solid fa-link"></i> Davet Et
+          </button>
+        </div>
+
+        <button onclick="openCloudSettingsModal()" title="Firebase Bulut Bağlantı Ayarları" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 text-xs font-medium transition flex items-center gap-1.5">
+          <i class="fa-solid fa-cloud text-sky-400"></i> Bulut
+        </button>
+
+        <button onclick="toggleAudio()" id="audioBtn" title="Ses Efektlerini Aç/Kapat" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 text-xs font-medium transition flex items-center gap-1.5">
+          <i class="fa-solid fa-volume-high text-emerald-400" id="audioIcon"></i> Ses
+        </button>
+        
+        <button onclick="exportCSV()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 text-xs font-medium transition flex items-center gap-1.5">
+          <i class="fa-solid fa-file-csv text-indigo-400"></i> Excel
+        </button>
+
+        <button onclick="openConfirmResetModal()" class="px-3 py-1.5 bg-red-950/60 hover:bg-red-900/80 text-red-300 border border-red-800/50 rounded-xl text-xs font-medium transition flex items-center gap-1.5">
+          <i class="fa-solid fa-rotate-left"></i> Sıfırla
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- Main Body Content -->
+  <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- Config & Quick Add Player Toolbar -->
+    <section class="grid grid-cols-1 md:grid-cols-12 gap-4 bg-slate-900 border border-slate-800 p-4 rounded-2xl shadow-xl">
+      <div class="md:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-3 border-b md:border-b-0 md:border-r border-slate-800 pb-4 md:pb-0 md:pr-4">
+        <div>
+          <label class="block text-xs font-medium text-indigo-300 mb-1 flex items-center gap-1.5">
+            <i class="fa-solid fa-circle-dot text-indigo-400"></i> 1. İtem Adı
+          </label>
+          <div class="flex gap-1.5">
+            <input type="text" id="item1NameInput" placeholder="Örn: Gold Bar / Kutu" 
+              class="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-xl px-3 py-2 text-sm text-slate-100 outline-none transition">
+            <button onclick="updateItemNames()" class="bg-indigo-600 hover:bg-indigo-500 text-white px-3 py-2 rounded-xl text-xs font-semibold shrink-0 transition">Kaydet</button>
+          </div>
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-amber-300 mb-1 flex items-center gap-1.5">
+            <i class="fa-solid fa-circle-dot text-amber-400"></i> 2. İtem Adı
+          </label>
+          <div class="flex gap-1.5">
+            <input type="text" id="item2NameInput" placeholder="Örn: Silver Gem / Takı" 
+              class="w-full bg-slate-950 border border-slate-700 focus:border-amber-500 rounded-xl px-3 py-2 text-sm text-slate-100 outline-none transition">
+            <button onclick="updateItemNames()" class="bg-amber-600 hover:bg-amber-500 text-white px-3 py-2 rounded-xl text-xs font-semibold shrink-0 transition">Kaydet</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="md:col-span-5 flex flex-col justify-center">
+        <label class="block text-xs font-medium text-emerald-300 mb-1 flex items-center gap-1.5">
+          <i class="fa-solid fa-user-plus text-emerald-400"></i> Yeni Oyuncu Ekle
+        </label>
+        <form onsubmit="handleAddPlayer(event)" class="flex gap-2">
+          <input type="text" id="newPlayerInput" placeholder="Oyuncu Nick / İsmi..." required
+            class="flex-1 bg-slate-950 border border-slate-700 focus:border-emerald-500 rounded-xl px-3 py-2 text-sm text-slate-100 outline-none transition">
+          <button type="submit" class="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-xl text-sm font-medium transition shadow-lg shadow-emerald-600/20 flex items-center gap-1.5 shrink-0">
+            <i class="fa-solid fa-plus"></i> Ekle
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Top Stats Bar -->
+    <section class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex items-center space-x-3">
+        <div class="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20">
+          <i class="fa-solid fa-users text-lg"></i>
+        </div>
+        <div>
+          <p class="text-xs text-slate-400">Toplam Oyuncu</p>
+          <p class="text-xl font-bold text-white" id="statPlayerCount">0</p>
+        </div>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex items-center space-x-3">
+        <div class="p-3 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
+          <i class="fa-solid fa-trophy text-lg"></i>
+        </div>
+        <div>
+          <p class="text-xs text-slate-400">Genel Drop Toplamı</p>
+          <p class="text-xl font-bold text-white" id="statTotalDrops">0</p>
+        </div>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex items-center space-x-3">
+        <div class="p-3 bg-indigo-500/10 text-indigo-400 rounded-xl border border-indigo-500/20">
+          <i class="fa-solid fa-box text-lg"></i>
+        </div>
+        <div>
+          <p class="text-xs text-slate-400 truncate max-w-[110px]" id="statItem1Label">Item 1 Toplam</p>
+          <p class="text-xl font-bold text-indigo-300" id="statItem1Total">0</p>
+        </div>
+      </div>
+
+      <div class="bg-slate-900 border border-slate-800 p-4 rounded-xl flex items-center space-x-3">
+        <div class="p-3 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20">
+          <i class="fa-solid fa-coins text-lg"></i>
+        </div>
+        <div>
+          <p class="text-xs text-slate-400 truncate max-w-[110px]" id="statItem2Label">Item 2 Toplam</p>
+          <p class="text-xl font-bold text-amber-300" id="statItem2Total">0</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Main Content Layout -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+      <div class="lg:col-span-7 space-y-4">
+        <div class="flex items-center justify-between">
+          <h2 class="text-lg font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-gamepad text-indigo-400"></i> Hızlı Drop Sayacı
+          </h2>
+          <span class="text-xs text-slate-400">İtem düşen oyuncuya tıklayın</span>
+        </div>
+
+        <div id="playersGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-4"></div>
+
+        <div id="emptyPlayersNotice" class="hidden bg-slate-900/50 border border-dashed border-slate-800 p-8 rounded-2xl text-center">
+          <i class="fa-solid fa-user-slash text-4xl text-slate-600 mb-3"></i>
+          <h3 class="text-base font-semibold text-slate-300">Bu Odada Henüz Oyuncu Yok</h3>
+          <p class="text-xs text-slate-500 mt-1">Yukarıdaki alandan ekleyebilir veya başka bir odaya geçebilirsiniz.</p>
+        </div>
+      </div>
+
+      <div class="lg:col-span-5 space-y-6">
+        
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+            <h2 class="text-base font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-chart-pie text-emerald-400"></i> Parti Özet Sıralaması
+            </h2>
+            <span class="text-xs text-slate-400" id="summaryCountBadge">0 kişi</span>
+          </div>
+
+          <div class="overflow-x-auto mt-3">
+            <table class="w-full text-left text-xs text-slate-300">
+              <thead class="bg-slate-950 text-slate-400 uppercase font-semibold border-b border-slate-800">
+                <tr>
+                  <th class="py-2.5 px-2">Oyuncu</th>
+                  <th class="py-2.5 px-2 text-center text-indigo-400 truncate max-w-[80px]" id="thItem1">Item 1</th>
+                  <th class="py-2.5 px-2 text-center text-amber-400 truncate max-w-[80px]" id="thItem2">Item 2</th>
+                  <th class="py-2.5 px-2 text-right">Toplam</th>
+                </tr>
+              </thead>
+              <tbody id="summaryTableBody" class="divide-y divide-slate-800/60"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl flex flex-col h-[520px]">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-slate-800 gap-2">
+            <h2 class="text-base font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-clock-rotate-left text-amber-400"></i> Canlı İşlem Logu
+            </h2>
+            <div class="flex items-center gap-2">
+              <select id="logFilterPlayer" onchange="renderLogs()" class="bg-slate-950 border border-slate-700 text-xs rounded-lg px-2 py-1 text-slate-300 outline-none">
+                <option value="ALL">Tüm Oyuncular</option>
+              </select>
+            </div>
+          </div>
+
+          <div id="logsContainer" class="flex-1 overflow-y-auto space-y-2 mt-3 pr-1"></div>
+
+          <div id="emptyLogsNotice" class="hidden my-auto text-center py-6">
+            <i class="fa-solid fa-scroll text-3xl text-slate-700 mb-2"></i>
+            <p class="text-xs text-slate-500">Henüz kaydedilmiş bir drop işlemi yok.</p>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </main>
+
+  <!-- Firebase Cloud Config Modal -->
+  <div id="cloudSettingsModal" class="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-cloud-arrow-up text-sky-400"></i> Bulut Veritabanı (Firebase) Bağlantısı
+        </h3>
+        <button onclick="closeCloudSettingsModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+      </div>
+      <p class="text-xs text-slate-400 leading-relaxed">
+        Farklı bilgisayar veya telefonlardaki arkadaşlarınla aynı odada gerçek zamanlı veri paylaşmak için kendi <strong class="text-slate-200">Firebase Config</strong> JSON verini aşağıya yapıştırabilirsin. Bağlamazsan uygulama <strong class="text-amber-300">Yerel Mod</strong> ile kendi tarayıcında ve sekmelerinde çalışır.
+      </p>
+      <div>
+        <label class="block text-xs font-semibold text-slate-300 mb-1">Firebase Config (JSON veya JS Objesi)</label>
+        <textarea id="firebaseConfigInput" rows="6" placeholder='{
+  "apiKey": "...",
+  "authDomain": "...firebaseapp.com",
+  "projectId": "...",
+  "storageBucket": "...appspot.com",
+  "messagingSenderId": "...",
+  "appId": "..."
+}' class="w-full bg-slate-950 border border-slate-700 focus:border-indigo-500 rounded-xl p-3 text-xs font-mono text-slate-200 outline-none"></textarea>
+      </div>
+      <div class="flex items-center justify-between pt-2 gap-2">
+        <button type="button" onclick="clearCloudConfig()" class="px-3 py-2 bg-slate-800 hover:bg-red-950 text-red-300 border border-slate-700 rounded-xl text-xs font-medium transition">
+          Bulutu Kaldır (Yerel Mod)
+        </button>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="closeCloudSettingsModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium">İptal</button>
+          <button type="button" onclick="saveCloudConfig()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-indigo-600/20">Kaydet ve Bağlan</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Player Modal -->
+  <div id="editPlayerModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-pen-to-square text-indigo-400"></i> Oyuncu İsmini Düzenle
+        </h3>
+        <button onclick="closeEditModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+      </div>
+      <input type="hidden" id="editPlayerId">
+      <div>
+        <label class="block text-xs text-slate-400 mb-1">Yeni İsim / Nick</label>
+        <input type="text" id="editPlayerNameInput" class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 outline-none focus:border-indigo-500">
+      </div>
+      <div class="flex justify-end space-x-2 pt-2">
+        <button onclick="closeEditModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium">İptal</button>
+        <button onclick="saveEditPlayer()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-medium shadow-lg shadow-indigo-600/20">Kaydet</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Reset Confirmation Modal -->
+  <div id="confirmResetModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 max-w-sm w-full shadow-2xl space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <h3 class="text-base font-bold text-red-400 flex items-center gap-2">
+          <i class="fa-solid fa-triangle-exclamation"></i> Dönemi Sıfırla
+        </h3>
+        <button onclick="closeConfirmResetModal()" class="text-slate-400 hover:text-white text-lg">&times;</button>
+      </div>
+      <p class="text-xs text-slate-300 leading-relaxed">
+        Bu odadaki tüm oyuncuların sayıları <strong>0</strong> yapılacak ve işlem geçmişi temizlenecektir. Devam etmek istiyor musunuz?
+      </p>
+      <div class="flex justify-end space-x-2 pt-2">
+        <button onclick="closeConfirmResetModal()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-medium">İptal</button>
+        <button onclick="executeResetAll()" class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white rounded-xl text-xs font-semibold shadow-lg shadow-red-600/20">Sıfırla</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none"></div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { 
+      getAuth, 
+      signInAnonymously, 
+      signInWithCustomToken, 
+      onAuthStateChanged 
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { 
+      getFirestore, 
+      doc, 
+      setDoc, 
+      onSnapshot 
+    } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'drop-tracker-v2';
+
+    function getStoredFirebaseConfig() {
+      if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+        try {
+          return JSON.parse(__firebase_config);
+        } catch (e) {}
+      }
+      try {
+        const raw = localStorage.getItem('drop_custom_firebase_config');
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.apiKey && parsed.projectId && !parsed.apiKey.includes('DemoConfigKey')) {
+          return parsed;
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    let db = null;
+    let auth = null;
+    let currentUser = null;
+    let unsubscribeRoom = null;
+    let localChannel = null;
+    let isRemoteUpdate = false;
+    let cloudActive = false;
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const hashRoom = window.location.hash.replace('#', '');
+    let currentRoomId = sanitizeRoomId(urlParams.get('oda') || hashRoom || 'ortak-parti');
+    let autoJoinedFromUrl = Boolean(urlParams.get('oda') || hashRoom);
+
+    window.appState = {
+      items: {
+        item1: 'Gold Bar / Kutu',
+        item2: 'Silver Gem / Takı'
+      },
+      players: [],
+      logs: [],
+      audioEnabled: true
+    };
+
+    function sanitizeRoomId(raw) {
+      return String(raw || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'ortak-parti';
+    }
+
+    function getLocalRoomStorageKey(roomId) {
+      return `drop_room_data_${roomId}`;
+    }
+
+    function loadLocalRoomData(roomId) {
+      try {
+        const raw = localStorage.getItem(getLocalRoomStorageKey(roomId));
+        if (raw) return JSON.parse(raw);
+      } catch (e) {}
+      return {
+        items: { item1: 'Gold Bar / Kutu', item2: 'Silver Gem / Takı' },
+        players: [
+          { id: 'p1', name: 'Warrior_Leader', count1: 0, count2: 0 },
+          { id: 'p2', name: 'Mage_Power', count1: 0, count2: 0 }
+        ],
+        logs: []
+      };
+    }
+
+    function saveLocalRoomData(roomId, payload) {
+      try {
+        localStorage.setItem(getLocalRoomStorageKey(roomId), JSON.stringify(payload));
+      } catch (e) {}
+    }
+
+    function applyRoomPayload(data) {
+      window.appState.items = data.items || { item1: 'Gold Bar / Kutu', item2: 'Silver Gem / Takı' };
+      window.appState.players = data.players || [];
+      window.appState.logs = data.logs || [];
+      document.getElementById('item1NameInput').value = window.appState.items.item1;
+      document.getElementById('item2NameInput').value = window.appState.items.item2;
+      renderAll();
+    }
+
+    function setupLocalChannel(roomId) {
+      if (localChannel) {
+        localChannel.close();
+      }
+      if ('BroadcastChannel' in window) {
+        localChannel = new BroadcastChannel(`drop_room_${roomId}`);
+        localChannel.onmessage = (event) => {
+          if (event.data && event.data.type === 'STATE_UPDATE') {
+            isRemoteUpdate = true;
+            saveLocalRoomData(roomId, event.data.payload);
+            applyRoomPayload(event.data.payload);
+            isRemoteUpdate = false;
+          }
+        };
+      }
+    }
+
+    // Listen to localStorage changes across tabs in the same browser
+    window.addEventListener('storage', (event) => {
+      if (event.key === getLocalRoomStorageKey(currentRoomId) && event.newValue) {
+        try {
+          const parsed = JSON.parse(event.newValue);
+          isRemoteUpdate = true;
+          applyRoomPayload(parsed);
+          isRemoteUpdate = false;
+        } catch (e) {}
+      }
+    });
+
+    function saveRecentRoom(roomId) {
+      try {
+        let recents = JSON.parse(localStorage.getItem('drop_recent_rooms') || '[]');
+        recents = [roomId, ...recents.filter(r => r !== roomId)].slice(0, 4);
+        localStorage.setItem('drop_recent_rooms', JSON.stringify(recents));
+        renderRecentRooms();
+      } catch (e) {}
+    }
+
+    function renderRecentRooms() {
+      try {
+        const recents = JSON.parse(localStorage.getItem('drop_recent_rooms') || '[]');
+        const container = document.getElementById('recentRoomsContainer');
+        const list = document.getElementById('recentRoomsList');
+        if (recents.length === 0) {
+          container.classList.add('hidden');
+          return;
+        }
+        container.classList.remove('hidden');
+        list.innerHTML = recents.map(r => `
+          <button type="button" onclick="selectRecentRoom('${r}')" 
+            class="px-2.5 py-1 bg-slate-950 hover:bg-indigo-600/20 border border-slate-800 hover:border-indigo-500/40 rounded-lg text-[11px] text-slate-300 font-medium transition">
+            #${r}
+          </button>
+        `).join('');
+      } catch (e) {}
+    }
+
+    window.selectRecentRoom = function(roomId) {
+      document.getElementById('lobbyRoomInput').value = roomId;
+    };
+
+    window.generateRandomRoom = function() {
+      const prefixes = ['parti', 'farm', 'boss', 'clan', 'drop'];
+      const randPrefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+      const randNum = Math.floor(1000 + Math.random() * 9000);
+      document.getElementById('lobbyRoomInput').value = `${randPrefix}-${randNum}`;
+    };
+
+    window.openLobbyModal = function() {
+      document.getElementById('lobbyRoomInput').value = currentRoomId;
+      renderRecentRooms();
+      const overlay = document.getElementById('lobbyOverlay');
+      overlay.classList.remove('hidden');
+      requestAnimationFrame(() => overlay.classList.remove('opacity-0'));
+    };
+
+    function hideLobbyModal() {
+      const overlay = document.getElementById('lobbyOverlay');
+      overlay.classList.add('opacity-0');
+      setTimeout(() => overlay.classList.add('hidden'), 300);
+    }
+
+    window.openCloudSettingsModal = function() {
+      const existing = localStorage.getItem('drop_custom_firebase_config') || '';
+      document.getElementById('firebaseConfigInput').value = existing;
+      document.getElementById('cloudSettingsModal').classList.remove('hidden');
+    };
+
+    window.closeCloudSettingsModal = function() {
+      document.getElementById('cloudSettingsModal').classList.add('hidden');
+    };
+
+    window.saveCloudConfig = function() {
+      let raw = document.getElementById('firebaseConfigInput').value.trim();
+      if (!raw) {
+        showToast('Lütfen Firebase ayarını yapıştırın', 'warning');
+        return;
+      }
+      // Allow pasting JS object like const firebaseConfig = { ... };
+      raw = raw.replace(/^(const|let|var)\s+\w+\s*=\s*/, '').replace(/;\s*$/, '');
+      try {
+        const parsed = JSON.parse(raw);
+        if (!parsed.apiKey || !parsed.projectId) {
+          showToast('apiKey ve projectId alanları zorunludur', 'error');
+          return;
+        }
+        localStorage.setItem('drop_custom_firebase_config', JSON.stringify(parsed, null, 2));
+        window.closeCloudSettingsModal();
+        showToast('Firebase ayarı kaydedildi, bağlanılıyor...', 'success');
+        initConnection(true);
+      } catch (e) {
+        showToast('Geçerli bir JSON formatı girin', 'error');
+      }
+    };
+
+    window.clearCloudConfig = function() {
+      localStorage.removeItem('drop_custom_firebase_config');
+      document.getElementById('firebaseConfigInput').value = '';
+      window.closeCloudSettingsModal();
+      showToast('Yerel Mod aktif edildi', 'info');
+      initConnection(false);
+    };
+
+    window.enterRoomFromLobby = function() {
+      const inputVal = document.getElementById('lobbyRoomInput').value;
+      const cleanId = sanitizeRoomId(inputVal);
+      currentRoomId = cleanId;
+      document.getElementById('lobbyRoomInput').value = cleanId;
+      document.getElementById('headerRoomName').innerText = cleanId;
+      
+      try {
+        window.history.replaceState(null, '', `#${cleanId}`);
+      } catch (e) {}
+
+      saveRecentRoom(cleanId);
+      hideLobbyModal();
+      subscribeToRoom(cleanId);
+      showToast(`"${cleanId}" odasına bağlanıldı`, 'success');
+    };
+
+    window.copyRoomLink = function() {
+      const shareUrl = `${window.location.origin}${window.location.pathname}#${currentRoomId}`;
+      navigator.clipboard.writeText(shareUrl).then(() => {
+        showToast(`Oda linki kopyalandı! (#${currentRoomId})`, 'success');
+      }).catch(() => {
+        showToast(`Oda Kodu: ${currentRoomId}`, 'info');
+      });
+    };
+
+    let audioCtx = null;
+    window.playSound = function(type = 'add') {
+      if (!window.appState.audioEnabled) return;
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (type === 'add') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.08);
+          gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.08);
+        } else if (type === 'sub') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(440, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(220, audioCtx.currentTime + 0.08);
+          gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.08);
+        }
+      } catch (e) {}
+    };
+
+    window.toggleAudio = function() {
+      window.appState.audioEnabled = !window.appState.audioEnabled;
+      const btn = document.getElementById('audioBtn');
+      if (window.appState.audioEnabled) {
+        btn.innerHTML = `<i class="fa-solid fa-volume-high text-emerald-400" id="audioIcon"></i> Ses`;
+        showToast('Ses efekti açıldı', 'info');
+      } else {
+        btn.innerHTML = `<i class="fa-solid fa-volume-xmark text-slate-500" id="audioIcon"></i> Ses`;
+        showToast('Ses efekti kapatıldı', 'info');
+      }
+    };
+
+    function updateSyncStatus(mode) {
+      const badge = document.getElementById('syncBadge');
+      const text = document.getElementById('syncStatusText');
+      const lobbyStatus = document.getElementById('lobbyAuthStatus');
+
+      if (mode === 'cloud') {
+        cloudActive = true;
+        badge.className = 'text-xs font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2.5 py-0.5 rounded-full flex items-center gap-1.5';
+        badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-emerald-500 pulse-dot animate-pulse"></span><span>Canlı Bulut</span>`;
+        lobbyStatus.className = 'mb-5 flex items-center justify-between gap-2 text-xs py-2.5 px-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20';
+        lobbyStatus.innerHTML = `
+          <div class="flex items-center gap-2 text-emerald-400 font-medium">
+            <i class="fa-solid fa-circle-check"></i> <span>Bulut bağlantısı aktif</span>
+          </div>
+          <button type="button" onclick="openCloudSettingsModal()" class="text-[11px] text-emerald-300 underline">Değiştir</button>
+        `;
+      } else {
+        cloudActive = false;
+        badge.className = 'text-xs font-semibold bg-sky-500/10 text-sky-400 border border-sky-500/20 px-2.5 py-0.5 rounded-full flex items-center gap-1.5';
+        badge.innerHTML = `<span class="w-2 h-2 rounded-full bg-sky-400"></span><span>Yerel Mod</span>`;
+        lobbyStatus.className = 'mb-5 flex items-center justify-between gap-2 text-xs py-2.5 px-3.5 rounded-xl bg-sky-500/10 border border-sky-500/20';
+        lobbyStatus.innerHTML = `
+          <div class="flex items-center gap-2 text-sky-300 font-medium">
+            <i class="fa-solid fa-hard-drive"></i> <span>Yerel kayıt hazır (Tek cihaz/sekme)</span>
+          </div>
+          <button type="button" onclick="openCloudSettingsModal()" class="text-[11px] font-semibold text-indigo-300 hover:text-indigo-200 underline">Bulut Bağla</button>
+        `;
+      }
+    }
+
+    async function initConnection(rejoinCurrent = false) {
+      renderRecentRooms();
+      document.getElementById('lobbyRoomInput').value = currentRoomId;
+      document.getElementById('headerRoomName').innerText = currentRoomId;
+
+      if (unsubscribeRoom) {
+        unsubscribeRoom();
+        unsubscribeRoom = null;
+      }
+      currentUser = null;
+      db = null;
+      auth = null;
+
+      const config = getStoredFirebaseConfig();
+
+      if (!config) {
+        updateSyncStatus('local');
+        if (autoJoinedFromUrl || rejoinCurrent) {
+          subscribeToRoom(currentRoomId);
+        }
+        return;
+      }
+
+      try {
+        const app = initializeApp(config, 'custom_' + Date.now());
+        auth = getAuth(app);
+        db = getFirestore(app);
+
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+
+        onAuthStateChanged(auth, (user) => {
+          if (user) {
+            currentUser = user;
+            updateSyncStatus('cloud');
+            subscribeToRoom(currentRoomId);
+            if (autoJoinedFromUrl) {
+              hideLobbyModal();
+            }
+          } else {
+            updateSyncStatus('local');
+          }
+        });
+      } catch (err) {
+        console.warn("Firebase connection fallback to local mode:", err);
+        updateSyncStatus('local');
+        showToast('Bulut bağlantısı kurulamadı, Yerel Mod aktif', 'warning');
+        if (autoJoinedFromUrl || rejoinCurrent) {
+          subscribeToRoom(currentRoomId);
+        }
+      }
+    }
+
+    function subscribeToRoom(roomId) {
+      setupLocalChannel(roomId);
+
+      // Load local data first so UI is instant
+      const localData = loadLocalRoomData(roomId);
+      applyRoomPayload(localData);
+      saveLocalRoomData(roomId, {
+        items: window.appState.items,
+        players: window.appState.players,
+        logs: window.appState.logs
+      });
+
+      if (cloudActive && db && currentUser) {
+        if (unsubscribeRoom) unsubscribeRoom();
+        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+
+        unsubscribeRoom = onSnapshot(roomRef, (snapshot) => {
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            isRemoteUpdate = true;
+            saveLocalRoomData(roomId, data);
+            applyRoomPayload(data);
+            isRemoteUpdate = false;
+          } else {
+            const initialData = loadLocalRoomData(roomId);
+            saveRoomToStorage(initialData);
+          }
+        }, (error) => {
+          console.error("Firestore Snapshot Error:", error);
+          updateSyncStatus('local');
+        });
+      }
+    }
+
+    async function saveRoomToStorage(dataToSave = window.appState) {
+      const payload = {
+        items: dataToSave.items,
+        players: dataToSave.players,
+        logs: dataToSave.logs,
+        updatedAt: new Date().toISOString()
+      };
+
+      saveLocalRoomData(currentRoomId, payload);
+
+      if (!isRemoteUpdate && localChannel) {
+        localChannel.postMessage({ type: 'STATE_UPDATE', payload });
+      }
+
+      if (cloudActive && db && currentUser) {
+        try {
+          const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomId);
+          await setDoc(roomRef, payload);
+        } catch (err) {
+          console.error("Cloud save error:", err);
+        }
+      }
+    }
+
+    function getFormattedDate() {
+      const now = new Date();
+      const day = String(now.getDate()).padStart(2, '0');
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const year = now.getFullYear();
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      return `${day}.${month}.${year} ${hours}:${minutes}:${seconds}`;
+    }
+
+    window.updateItemNames = function() {
+      const v1 = document.getElementById('item1NameInput').value.trim();
+      const v2 = document.getElementById('item2NameInput').value.trim();
+
+      window.appState.items.item1 = v1 || 'Item 1';
+      window.appState.items.item2 = v2 || 'Item 2';
+
+      saveRoomToStorage();
+      renderLabels();
+      renderPlayers();
+      showToast('İtem isimleri güncellendi', 'success');
+    };
+
+    window.handleAddPlayer = function(e) {
+      e.preventDefault();
+      const input = document.getElementById('newPlayerInput');
+      const name = input.value.trim();
+      if (!name) return;
+
+      if (window.appState.players.some(p => p.name.toLowerCase() === name.toLowerCase())) {
+        showToast('Bu oyuncu zaten ekli!', 'warning');
+        return;
+      }
+
+      const newPlayer = {
+        id: 'p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+        name: name,
+        count1: 0,
+        count2: 0
+      };
+
+      window.appState.players.push(newPlayer);
+      input.value = '';
+
+      window.playSound('add');
+      saveRoomToStorage();
+      renderAll();
+      showToast(`${name} odaya eklendi`, 'success');
+    };
+
+    window.adjustDrop = function(playerId, itemId, delta) {
+      const player = window.appState.players.find(p => p.id === playerId);
+      if (!player) return;
+
+      if (itemId === 'item1') {
+        player.count1 = Math.max(0, (player.count1 || 0) + delta);
+      } else {
+        player.count2 = Math.max(0, (player.count2 || 0) + delta);
+      }
+
+      const itemName = itemId === 'item1' ? window.appState.items.item1 : window.appState.items.item2;
+      const newLog = {
+        id: 'l_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+        playerId: player.id,
+        playerName: player.name,
+        itemId: itemId,
+        itemName: itemName,
+        delta: delta,
+        timestamp: getFormattedDate()
+      };
+
+      window.appState.logs.unshift(newLog);
+      window.playSound(delta > 0 ? 'add' : 'sub');
+      saveRoomToStorage();
+      renderAll();
+    };
+
+    window.undoLogEntry = function(logId) {
+      const logIdx = window.appState.logs.findIndex(l => l.id === logId);
+      if (logIdx === -1) return;
+
+      const log = window.appState.logs[logIdx];
+      const player = window.appState.players.find(p => p.id === log.playerId);
+
+      if (player) {
+        if (log.itemId === 'item1') {
+          player.count1 = Math.max(0, (player.count1 || 0) - log.delta);
+        } else {
+          player.count2 = Math.max(0, (player.count2 || 0) - log.delta);
+        }
+      }
+
+      window.appState.logs.splice(logIdx, 1);
+      window.playSound('sub');
+      saveRoomToStorage();
+      renderAll();
+      showToast('İşlem geri alındı ve log silindi', 'info');
+    };
+
+    window.deletePlayer = function(id) {
+      const player = window.appState.players.find(p => p.id === id);
+      if (!player) return;
+
+      window.appState.players = window.appState.players.filter(p => p.id !== id);
+      saveRoomToStorage();
+      renderAll();
+      showToast(`${player.name} odadan silindi`, 'info');
+    };
+
+    window.openEditModal = function(id) {
+      const player = window.appState.players.find(p => p.id === id);
+      if (!player) return;
+
+      document.getElementById('editPlayerId').value = player.id;
+      document.getElementById('editPlayerNameInput').value = player.name;
+      document.getElementById('editPlayerModal').classList.remove('hidden');
+    };
+
+    window.closeEditModal = function() {
+      document.getElementById('editPlayerModal').classList.add('hidden');
+    };
+
+    window.saveEditPlayer = function() {
+      const id = document.getElementById('editPlayerId').value;
+      const newName = document.getElementById('editPlayerNameInput').value.trim();
+      if (!newName) return;
+
+      const player = window.appState.players.find(p => p.id === id);
+      if (player) {
+        player.name = newName;
+        window.appState.logs.forEach(l => {
+          if (l.playerId === id) l.playerName = newName;
+        });
+        saveRoomToStorage();
+        renderAll();
+        showToast('Oyuncu ismi güncellendi', 'success');
+      }
+      window.closeEditModal();
+    };
+
+    window.openConfirmResetModal = function() {
+      document.getElementById('confirmResetModal').classList.remove('hidden');
+    };
+
+    window.closeConfirmResetModal = function() {
+      document.getElementById('confirmResetModal').classList.add('hidden');
+    };
+
+    window.executeResetAll = function() {
+      window.appState.players.forEach(p => {
+        p.count1 = 0;
+        p.count2 = 0;
+      });
+      window.appState.logs = [];
+      saveRoomToStorage();
+      renderAll();
+      window.closeConfirmResetModal();
+      showToast('Odadaki tüm drop verileri sıfırlandı', 'warning');
+    };
+
+    window.exportCSV = function() {
+      let csvContent = "\uFEFF";
+      csvContent += `Tarih/Saat;Oyuncu;Item;Miktar;Islem\n`;
+
+      window.appState.logs.forEach(l => {
+        csvContent += `"${l.timestamp}";"${l.playerName}";"${l.itemName}";"${l.delta}";"${l.delta > 0 ? 'Ekleme' : 'Düşürme'}"\n`;
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `Drop_Raporu_${currentRoomId}_${new Date().toISOString().slice(0,10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('Excel/CSV Raporu indirildi', 'success');
+    };
+
+    function renderAll() {
+      renderLabels();
+      renderStats();
+      renderPlayers();
+      renderSummaryTable();
+      renderLogFilterOptions();
+      renderLogs();
+    }
+
+    function renderLabels() {
+      document.getElementById('statItem1Label').innerText = `${window.appState.items.item1} Toplam`;
+      document.getElementById('statItem2Label').innerText = `${window.appState.items.item2} Toplam`;
+      document.getElementById('thItem1').innerText = window.appState.items.item1;
+      document.getElementById('thItem2').innerText = window.appState.items.item2;
+    }
+
+    function renderStats() {
+      const totalPlayers = window.appState.players.length;
+      let total1 = 0, total2 = 0;
+      window.appState.players.forEach(p => {
+        total1 += p.count1 || 0;
+        total2 += p.count2 || 0;
+      });
+
+      document.getElementById('statPlayerCount').innerText = totalPlayers;
+      document.getElementById('statItem1Total').innerText = total1;
+      document.getElementById('statItem2Total').innerText = total2;
+      document.getElementById('statTotalDrops').innerText = total1 + total2;
+      document.getElementById('summaryCountBadge').innerText = `${totalPlayers} Oyuncu`;
+    }
+
+    function renderPlayers() {
+      const container = document.getElementById('playersGrid');
+      const emptyNotice = document.getElementById('emptyPlayersNotice');
+
+      if (window.appState.players.length === 0) {
+        container.innerHTML = '';
+        emptyNotice.classList.remove('hidden');
+        return;
+      }
+
+      emptyNotice.classList.add('hidden');
+      container.innerHTML = window.appState.players.map(player => {
+        const total = (player.count1 || 0) + (player.count2 || 0);
+
+        return `
+          <div class="bg-slate-900 border border-slate-800 hover:border-slate-700 rounded-2xl p-4 shadow-lg transition flex flex-col justify-between space-y-4">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2.5">
+              <div class="flex items-center space-x-2">
+                <span class="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 font-bold flex items-center justify-center text-sm">
+                  ${escapeHtml(player.name.charAt(0).toUpperCase())}
+                </span>
+                <div>
+                  <h3 class="font-bold text-sm text-slate-100 flex items-center gap-1.5 truncate max-w-[130px]" title="${escapeHtml(player.name)}">
+                    ${escapeHtml(player.name)}
+                  </h3>
+                  <span class="text-[10px] text-slate-400">Toplam Drop: <strong class="text-white">${total}</strong></span>
+                </div>
+              </div>
+              <div class="flex items-center space-x-1">
+                <button onclick="window.openEditModal('${player.id}')" class="p-1.5 text-slate-400 hover:text-indigo-400 hover:bg-slate-800 rounded-lg transition" title="Düzenle">
+                  <i class="fa-solid fa-pen text-xs"></i>
+                </button>
+                <button onclick="window.deletePlayer('${player.id}')" class="p-1.5 text-slate-400 hover:text-red-400 hover:bg-slate-800 rounded-lg transition" title="Sil">
+                  <i class="fa-solid fa-trash-can text-xs"></i>
+                </button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2.5">
+              <div class="bg-slate-950 border border-indigo-500/20 rounded-xl p-2.5 flex flex-col justify-between space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-semibold text-indigo-300 truncate max-w-[80px]" title="${escapeHtml(window.appState.items.item1)}">
+                    ${escapeHtml(window.appState.items.item1)}
+                  </span>
+                  <span class="text-xs font-extrabold text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
+                    ${player.count1 || 0}
+                  </span>
+                </div>
+                <div class="flex items-center space-x-1 pt-1">
+                  <button onclick="window.adjustDrop('${player.id}', 'item1', 1)" 
+                    class="flex-1 py-1.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold text-xs rounded-lg transition shadow-md shadow-indigo-600/20 flex items-center justify-center gap-1">
+                    <i class="fa-solid fa-plus"></i> 1
+                  </button>
+                  <button onclick="window.adjustDrop('${player.id}', 'item1', -1)" 
+                    class="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-400 hover:text-slate-200 text-xs rounded-lg transition" title="1 Eksilt">
+                    -1
+                  </button>
+                </div>
+              </div>
+
+              <div class="bg-slate-950 border border-amber-500/20 rounded-xl p-2.5 flex flex-col justify-between space-y-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-semibold text-amber-300 truncate max-w-[80px]" title="${escapeHtml(window.appState.items.item2)}">
+                    ${escapeHtml(window.appState.items.item2)}
+                  </span>
+                  <span class="text-xs font-extrabold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-md border border-amber-500/20">
+                    ${player.count2 || 0}
+                  </span>
+                </div>
+                <div class="flex items-center space-x-1 pt-1">
+                  <button onclick="window.adjustDrop('${player.id}', 'item2', 1)" 
+                    class="flex-1 py-1.5 bg-amber-600 hover:bg-amber-500 active:scale-95 text-white font-bold text-xs rounded-lg transition shadow-md shadow-amber-600/20 flex items-center justify-center gap-1">
+                    <i class="fa-solid fa-plus"></i> 1
+                  </button>
+                  <button onclick="window.adjustDrop('${player.id}', 'item2', -1)" 
+                    class="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-400 hover:text-slate-200 text-xs rounded-lg transition" title="1 Eksilt">
+                    -1
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function renderSummaryTable() {
+      const tbody = document.getElementById('summaryTableBody');
+      if (window.appState.players.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" class="py-4 text-center text-slate-500">Oyuncu bulunamadı.</td></tr>`;
+        return;
+      }
+
+      const sorted = [...window.appState.players].sort((a, b) => {
+        return ((b.count1 || 0) + (b.count2 || 0)) - ((a.count1 || 0) + (a.count2 || 0));
+      });
+
+      tbody.innerHTML = sorted.map((p, idx) => {
+        const total = (p.count1 || 0) + (p.count2 || 0);
+        let rankBadge = `<span class="text-slate-400 font-mono">${idx + 1}.</span>`;
+        if (idx === 0 && total > 0) rankBadge = `<i class="fa-solid fa-crown text-amber-400"></i>`;
+        else if (idx === 1 && total > 0) rankBadge = `<i class="fa-solid fa-medal text-slate-300"></i>`;
+        else if (idx === 2 && total > 0) rankBadge = `<i class="fa-solid fa-award text-amber-600"></i>`;
+
+        return `
+          <tr class="hover:bg-slate-800/40 transition">
+            <td class="py-2.5 px-2 font-medium text-slate-200 flex items-center gap-2">
+              <span class="w-4 text-center">${rankBadge}</span>
+              <span class="truncate max-w-[100px]" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</span>
+            </td>
+            <td class="py-2.5 px-2 text-center text-indigo-300 font-bold">${p.count1 || 0}</td>
+            <td class="py-2.5 px-2 text-center text-amber-300 font-bold">${p.count2 || 0}</td>
+            <td class="py-2.5 px-2 text-right font-extrabold text-white">${total}</td>
+          </tr>
+        `;
+      }).join('');
+    }
+
+    function renderLogFilterOptions() {
+      const select = document.getElementById('logFilterPlayer');
+      const val = select.value;
+      let html = `<option value="ALL">Tüm Oyuncular</option>`;
+      window.appState.players.forEach(p => {
+        html += `<option value="${p.id}" ${val === p.id ? 'selected' : ''}>${escapeHtml(p.name)}</option>`;
+      });
+      select.innerHTML = html;
+    }
+
+    window.renderLogs = function() {
+      const container = document.getElementById('logsContainer');
+      const emptyNotice = document.getElementById('emptyLogsNotice');
+      const filterId = document.getElementById('logFilterPlayer').value;
+
+      let filtered = window.appState.logs;
+      if (filterId !== 'ALL') {
+        filtered = filtered.filter(l => l.playerId === filterId);
+      }
+
+      if (filtered.length === 0) {
+        container.innerHTML = '';
+        emptyNotice.classList.remove('hidden');
+        return;
+      }
+
+      emptyNotice.classList.add('hidden');
+      container.innerHTML = filtered.map(log => {
+        const isAdd = log.delta > 0;
+        const deltaBadge = isAdd 
+          ? `<span class="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded text-[10px] font-bold">+1</span>`
+          : `<span class="bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded text-[10px] font-bold">-1</span>`;
+
+        return `
+          <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-2.5 flex items-center justify-between text-xs transition hover:border-slate-700">
+            <div class="flex items-center space-x-2.5 overflow-hidden">
+              ${deltaBadge}
+              <div class="truncate">
+                <p class="text-slate-200 font-semibold truncate">
+                  <span class="text-indigo-300">${escapeHtml(log.playerName)}</span> &bull; 
+                  <span class="${log.itemId === 'item1' ? 'text-indigo-400' : 'text-amber-400'}">${escapeHtml(log.itemName)}</span>
+                </p>
+                <p class="text-[10px] text-slate-500 flex items-center gap-1">
+                  <i class="fa-regular fa-clock text-[9px]"></i> ${log.timestamp}
+                </p>
+              </div>
+            </div>
+            <button onclick="window.undoLogEntry('${log.id}')" class="text-slate-500 hover:text-red-400 p-1.5 rounded-lg hover:bg-slate-800 transition shrink-0" title="İşlemi Geri Al">
+              <i class="fa-solid fa-rotate-left text-xs"></i>
+            </button>
+          </div>
+        `;
+      }).join('');
+    };
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      
+      let bgColors = 'bg-slate-900 border-indigo-500 text-indigo-300';
+      let icon = 'fa-circle-info text-indigo-400';
+
+      if (type === 'success') {
+        bgColors = 'bg-slate-900 border-emerald-500 text-emerald-300';
+        icon = 'fa-circle-check text-emerald-400';
+      } else if (type === 'warning') {
+        bgColors = 'bg-slate-900 border-amber-500 text-amber-300';
+        icon = 'fa-triangle-exclamation text-amber-400';
+      } else if (type === 'error') {
+        bgColors = 'bg-slate-900 border-red-500 text-red-300';
+        icon = 'fa-circle-xmark text-red-400';
+      }
+
+      toast.className = `flex items-center space-x-2.5 border px-4 py-3 rounded-xl shadow-2xl text-xs font-semibold backdrop-blur-md transition-all duration-300 transform translate-y-2 opacity-0 ${bgColors}`;
+      toast.innerHTML = `<i class="fa-solid ${icon} text-base"></i><span>${escapeHtml(message)}</span>`;
+
+      container.appendChild(toast);
+
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      });
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 2500);
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    document.getElementById('lobbyRoomInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        enterRoomFromLobby();
+      }
+    });
+
+    initConnection(false);
+  </script>
+</body>
+</html>
